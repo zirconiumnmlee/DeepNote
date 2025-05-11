@@ -174,13 +174,13 @@ if __name__ == "__main__":
                     )
                     hist.add(stamp)
                     tot += 1
-
-    contents = split_text(contents)
-    embeddings = model.encode(contents, batch_size=600)
-    with open(
-        f"../../../data/corpus/{dataset_name}/chunk.json", "w", encoding="utf-8"
-    ) as fout:
-        json.dump(contents, fout, ensure_ascii=False)
+    if dataset_name!="wiki":
+        contents = split_text(contents)
+        embeddings = model.encode(contents, batch_size=600)
+        with open(
+            f"../../../data/corpus/{dataset_name}/chunk.json", "w", encoding="utf-8"
+        ) as fout:
+            json.dump(contents, fout, ensure_ascii=False)
     print("Building index ...")
     build_index(embeddings, vectorstore_path)
     end = time.time()
