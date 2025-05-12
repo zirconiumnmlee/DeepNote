@@ -59,27 +59,27 @@ parser.add_argument(
 parser.add_argument(
     "--model",
     type=str,
-    choices=["llama-3.1-8b-instruct", "qwen2.5-7b-instruct"],
-    default="llama-3.1-8b-instruct",
+    choices=["llama-3.1-8b-instruct", "qwen2.5-7b-instruct","qwen2.5-3b-instruct"],
+    default="qwen2.5-3b-instruct",
     help="Base model used for data generation",
 )
 parser.add_argument(
     "--score_model",
     type=str,
-    choices=["gpt-4o-mini-2024-07-18"],
-    default="gpt-4o-mini-2024-07-18",
+    choices=["gpt-4o-mini-2024-07-18","Qwen/Qwen3-8B"],
+    default="Qwen/Qwen3-8B",
     help="Model used for scoring",
 )
 parser.add_argument(
     "--gpu_memory_utilization",
     type=float,
-    default=0.9,
+    default=0.8,
     help="GPU memory utilization limit",
 )
 parser.add_argument(
     "--device",
     type=str,
-    default="0,1,2,3,4,5,6,7",
+    default="0",
     help="Comma separated list of devices to use for parallel processing",
 )
 args = parser.parse_args()
@@ -136,7 +136,7 @@ def gen_data(split, device_id):
         model=model_path,
         tensor_parallel_size=1,
         trust_remote_code=True,
-        dtype="bfloat16",
+        dtype="float16",
         gpu_memory_utilization=args.gpu_memory_utilization,
     )
     sampling_params = SamplingParams(max_tokens=1024, temperature=1, top_p=0.9)
@@ -315,7 +315,7 @@ def gen_data(split, device_id):
             )
             prompts = batch["prompts"]
 
-            responses = [call_llm(prompt, temp, top_p) for prompt in prompts]
+            responses = call_llm(prompts,sampling_params)
 
             for idx, response in enumerate(responses):
                 if len(batch_temp_refine_note) <= idx:
@@ -392,14 +392,16 @@ def main():
     splits = split_data(list(dataloader), num_devices)
     processes = []
 
-    for rank, device_id in enumerate(visible_devices):
+    gen_data(list(splits[0]), visible_devices[0])
+
+    """for rank, device_id in enumerate(visible_devices):
         split_dataloader = splits[rank]
         p = mp.Process(target=gen_data, args=(list(split_dataloader), device_id))
         p.start()
         processes.append(p)
 
     for p in processes:
-        p.join()
+        p.join()"""
 
 
 if __name__ == "__main__":
@@ -410,4 +412,5 @@ if __name__ == "__main__":
         args.output_path,
         f"dpo_data-{args.model}-score_{args.score_model}_num-{args.num_samples}_para-{args.per_data_gen_num}-{current_date}.jsonl",
     )
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
     main()

@@ -2,6 +2,8 @@ import argparse
 
 import torch
 from datasets import load_dataset
+import sys
+print(f"Python executable: {sys.executable}")
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from functools import partial
 from trl import (
@@ -86,7 +88,8 @@ def main(script_args, training_args, model_args):
     ################
 
     partial_preprocess = partial(preprocessing, args=training_args, tokenizer=tokenizer)
-    dataset = load_dataset(script_args.dataset_name, name=script_args.dataset_config)
+    print(f"dataset_name argument: {script_args.dataset_name}")
+    dataset = load_dataset("json",data_files=script_args.dataset_name)#, name=script_args.dataset_config)
     dataset = dataset.map(partial_preprocess)
 
     ##########

@@ -1,17 +1,16 @@
 import os, time, json, re
 import torch
-from openai import OpenAI
 import random
 import numpy as np
 import yaml
 import backoff
+import requests
 
 with open("../config/config.yaml", "r") as f:
     config = yaml.safe_load(f)
-os.environ["OPENAI_API_KEY"] = config["model"]["OPENAI_API_KEY"]
-os.environ["OPENAI_BASE_URL"] = config["model"]["OPENAI_BASE_URL"]
-client = OpenAI()
 
+SILICONFLOW_API_KEY=config["model"]["SILICONFLOW_API_KEY"]
+SILICONFLOW_API_URL=config["model"]["SILICONFLOW_API_URL"]
 
 def p_template(template, variables):
     prompt_file = f"../prompts/en/{template}"
@@ -20,30 +19,51 @@ def p_template(template, variables):
     prompt = prompt.format(**variables)
     return prompt
 
-
-def gpt_gen(model, content, temperature=0.1, top_p=0.9):
+def silicon_gen(model, content, temperature=0.1, top_p=0.9):
     try:
-        completion = client.chat.completions.create(
-            model=model,
-            temperature=temperature,
-            top_p=top_p,
-            max_tokens=1280,
-            messages=[{"role": "user", "content": content}],
-        )
+        url = SILICONFLOW_API_URL
 
-        return completion.choices[0].message.content
+        payload = {
+            "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+            "stream": False,
+            "max_tokens": 512,
+            "min_p": 0.05,
+            "temperature": 0.7,
+            "top_p": 0.7,
+            "top_k": 50,
+            "frequency_penalty": 0.5,
+            "n": 1,
+            "stop": [],
+            "messages": [{"role": "user","content": content}]
+        }
 
+        headers = {
+            "Authorization": f"Bearer {SILICONFLOW_API_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        response = requests.request("POST", url, json=payload, headers=headers)
+        try:
+            data = response.json()
+        except Exception:
+            print("⚠️ 响应不是合法JSON:", response.text)
+            raise Exception("API响应格式错误")
+
+        return data["choices"][0]["message"]["content"]
+
+        #return response.text["choices"][0]["message"]["contents"]
+    
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"[siliconflow_gen] Error: {e}")
         time.sleep(0.5)
-
+    
     return None
 
-
-@backoff.on_exception(backoff.expo, (Exception), max_time=100)
-def call_gpt(model, content, temperature=1, top_p=0.9):
-    res = gpt_gen(model, content, temperature, top_p)
-    assert res is not None
+@backoff.on_exception(backoff.expo, (Exception), max_time=300, max_tries=5)
+def call_silicon(model, content, temperature=1, top_p=0.9):
+    res = silicon_gen(model, content, temperature, top_p)
+    if res is None:
+        raise Exception("API调用失败")
     return res
 
 
@@ -56,7 +76,6 @@ def extract_best_worst(sequence):
         worst = result["worst_id"]
 
     except:
-
         pattern_best = re.compile(r'"best_id"\s*:\s*(\d+)')
         pattern_worst = re.compile(r'"worst_id"\s*:\s*(\d+)')
 
@@ -98,7 +117,7 @@ def LLM_score_init_note(model_name, question, refs, init_notes):
     prompt = config["score"]["init_note"].format(
         query=question, refs=refs, notes=init_notes_prompt
     )
-    response = call_gpt(model_name, prompt)
+    response = call_silicon(model_name, prompt)
     best, worst = extract_best_worst(response)
     try:
         best_note, worst_note = init_notes[best], init_notes[worst]
@@ -119,7 +138,7 @@ def LLM_score_gen_new_query(
         query_log=query_log,
         new_querys=querys_prompt,
     )
-    response = call_gpt(model_name, prompt)
+    response = call_silicon(model_name, prompt)
     best, worst = extract_best_worst(response)
 
     try:
@@ -133,7 +152,7 @@ def LLM_score_compare_note(model_name, query, best_note, new_note):
     prompt = p_template(
         "compare", {"query": query, "best_note": best_note, "new_note": new_note}
     )
-    response = call_gpt(model_name, prompt)
+    response = call_silicon(model_name, prompt)
 
     try:
         if "json" in response:
